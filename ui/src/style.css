@@ -59,3 +59,7 @@ th { color: #607b88; font-weight: 800; }
 .attention-box > i { font-size: 28px; color: #b46f00; line-height: 1; }
 .panel.attention { border: 2px solid #c98a1b; box-shadow: 0 0 0 4px rgba(201,138,27,.12); }
 .nav-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #e0a02f; color: #1c1300; font: 700 12px/20px 'DM Sans',sans-serif; text-align: center; }
+.lang-switch { display: flex; gap: 4px; padding: 0 14px; }
+.lang-switch button { flex: 1; border: 1px solid #2c4655; background: transparent; color: #bbccd6; border-radius: 8px; padding: 6px 0; font: 700 12px 'DM Sans',sans-serif; cursor: pointer; }
+.lang-switch button.active { background: #1f6f6c; border-color: #1f6f6c; color: #fff; }
+@media(max-width:900px){.lang-switch{padding:0 4px;flex-direction:column}}

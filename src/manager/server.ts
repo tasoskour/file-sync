@@ -18,9 +18,17 @@ export async function runManager(): Promise<void> {
   const sid = await currentSid();
   const token = randomBytes(32).toString('base64url');
   let lastRequest = Date.now();
+  let closedAt = 0; // set when the page reports it was closed; a reload cancels it
   const server = http.createServer(async (req, res) => {
     lastRequest = Date.now();
     try {
+      if (req.method === 'POST' && req.url === '/api/closed') {
+        // sendBeacon cannot set headers, so the token travels in the body.
+        const input = await body<{token?:string}>(req).catch(() => ({} as {token?:string}));
+        if (input.token === token) closedAt = Date.now();
+        res.writeHead(204); res.end(); return;
+      }
+      closedAt = 0;
       if (req.url?.startsWith('/api/')) {
         if (req.headers['x-filesync-token'] !== token) return reply(res, 403, { error: 'Invalid manager session' });
         const origin = req.headers.origin;
@@ -36,7 +44,10 @@ export async function runManager(): Promise<void> {
   if (process.env.FILESYNC_NO_BROWSER !== '1') execFile('rundll32.exe', ['url.dll,FileProtocolHandler', url], { windowsHide: true }, () => undefined);
   const existing = await readConfig();
   if (existing?.ownerSid === sid) for (const pair of existing.pairs) await enqueue(existing, { action: 'verify', pairId: pair.id });
-  setInterval(() => { if (Date.now() - lastRequest > 5 * 60_000) server.close(() => process.exit(0)); }, 30_000).unref();
+  // Exit shortly after the browser page closes. The idle limit is a fallback for browsers that skip the close notice.
+  setInterval(() => {
+    if ((closedAt && Date.now() - closedAt > 8_000) || Date.now() - lastRequest > 3 * 60_000) process.exit(0);
+  }, 2_000);
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, sid: string): Promise<void> {
