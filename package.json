@@ -1,0 +1,44 @@
+{
+  "name": "filesync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One-way Windows folder backup with a local manager",
+  "scripts": {
+    "dev:ui": "vite --host 127.0.0.1",
+    "dev:manager": "tsx src/main.ts --manager",
+    "dev:service": "tsx src/main.ts --service",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && vue-tsc --noEmit -p tsconfig.ui.json",
+    "test": "tsc -p tsconfig.server.json && tsx --test tests/*.test.ts",
+    "build": "tsc -p tsconfig.server.json && vite build && tsx scripts/make-icon.ts",
+    "fetch:nssm": "tsx scripts/fetch-nssm.ts",
+    "package:win": "npm run fetch:nssm && npm run build && tsx scripts/package-win.ts"
+  },
+  "dependencies": {
+    "@mdi/font": "^7.4.47",
+    "vue": "^3.5.18",
+    "vuetify": "^3.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "@yao-pkg/pkg": "^6.21.0",
+    "png-to-ico": "^3.0.1",
+    "resedit": "^2.0.0",
+    "sharp": "^0.35.5",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.0",
+    "vue-tsc": "^3.0.5"
+  },
+  "bin": "build/server/main.js",
+  "pkg": {
+    "targets": [
+      "node24-win-x64"
+    ],
+    "assets": [
+      "build/ui/**/*",
+      "vendor/nssm.exe"
+    ],
+    "outputPath": "dist"
+  }
+}

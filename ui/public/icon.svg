@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Two folders connected by a sync arrow">
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="#142438"/>
+  <path d="M45 79c0-8 6-14 14-14h43l14 15h38c8 0 14 6 14 14v70c0 8-6 14-14 14H59c-8 0-14-6-14-14V79Z" fill="#5DD5C2"/>
+  <path d="M45 96h123v69c0 7-6 13-13 13H58c-7 0-13-6-13-13V96Z" fill="#25A99A"/>
+  <path d="M95 112c0-8 6-14 14-14h37l14 15h37c8 0 14 6 14 14v58c0 8-6 14-14 14h-88c-8 0-14-6-14-14v-73Z" fill="#D8EFF0"/>
+  <path d="M95 130h116v55c0 8-6 14-14 14h-88c-8 0-14-6-14-14v-55Z" fill="#F5FCFB"/>
+  <path d="M91 200c-17-7-29-19-35-36" fill="none" stroke="#FFFFFF" stroke-width="15" stroke-linecap="round"/>
+  <path d="m43 164 13-15 20 4" fill="none" stroke="#FFFFFF" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M165 65c17 7 29 20 35 36" fill="none" stroke="#FFFFFF" stroke-width="15" stroke-linecap="round"/>
+  <path d="m212 100-12 15-20-3" fill="none" stroke="#FFFFFF" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
