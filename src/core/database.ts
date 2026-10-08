@@ -20,6 +20,7 @@ export class StateDb {
       CREATE TABLE IF NOT EXISTS entries (path TEXT PRIMARY KEY, sourceHash TEXT, backupHash TEXT, backupKind TEXT NOT NULL, sourceIno TEXT, sourceSize INTEGER, sourceMtime REAL, backupMtime REAL);
       CREATE TABLE IF NOT EXISTS history (id TEXT PRIMARY KEY, path TEXT NOT NULL, operation TEXT NOT NULL, archivePath TEXT, hash TEXT, createdAt TEXT NOT NULL, expiresAt TEXT NOT NULL, metadata TEXT);
       CREATE TABLE IF NOT EXISTS journal (id TEXT PRIMARY KEY, path TEXT NOT NULL, operation TEXT NOT NULL, stagePath TEXT, startedAt TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS tracked (path TEXT PRIMARY KEY, hash TEXT NOT NULL, seenAt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_samples (at TEXT PRIMARY KEY, rss INTEGER NOT NULL, heapUsed INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS history_created ON history(createdAt DESC);`);
   }
@@ -37,7 +38,7 @@ export class StateDb {
     return map;
   }
   resetPair(pairId: string): void {
-    this.db.exec('DELETE FROM entries; DELETE FROM journal;');
+    this.db.exec('DELETE FROM entries; DELETE FROM journal; DELETE FROM tracked;');
     this.setMeta('pairId', pairId);
     this.setMeta('initialized', '0');
   }
@@ -78,6 +79,18 @@ export class StateDb {
   history(limit = 500): HistoryItem[] { return this.db.prepare('SELECT * FROM history ORDER BY createdAt DESC LIMIT ?').all(limit) as unknown as HistoryItem[]; }
   historyItem(id: string): HistoryItem | undefined { return this.db.prepare('SELECT * FROM history WHERE id=?').get(id) as unknown as HistoryItem | undefined; }
   expired(now: string): HistoryItem[] { return this.db.prepare('SELECT * FROM history WHERE expiresAt<=?').all(now) as unknown as HistoryItem[]; }
+  tracked(): Map<string, { hash: string; seenAt: string }> {
+    const map = new Map<string, { hash: string; seenAt: string }>();
+    for (const row of this.db.prepare('SELECT path,hash,seenAt FROM tracked').all() as Array<{path:string;hash:string;seenAt:string}>) map.set(row.path, { hash: row.hash, seenAt: row.seenAt });
+    return map;
+  }
+  setTracked(relative: string, hash: string, seenAt: string): void { this.db.prepare('INSERT INTO tracked(path,hash,seenAt) VALUES(?,?,?) ON CONFLICT(path) DO UPDATE SET hash=excluded.hash, seenAt=excluded.seenAt').run(relative, hash, seenAt); }
+  deleteTracked(relative: string): void { this.db.prepare('DELETE FROM tracked WHERE path=?').run(relative); }
+  transaction(work: () => void): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try { work(); this.db.exec('COMMIT'); } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  archiveReferences(archivePath: string): number { return (this.db.prepare('SELECT COUNT(*) AS n FROM history WHERE archivePath=?').get(archivePath) as { n: number }).n; }
   deleteHistory(id: string): void { this.db.prepare('DELETE FROM history WHERE id=?').run(id); }
   sampleMemory(at: string, rss: number, heapUsed: number): void {
     this.db.prepare('INSERT OR REPLACE INTO memory_samples VALUES(?,?,?)').run(at, rss, heapUsed);

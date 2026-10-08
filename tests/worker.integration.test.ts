@@ -47,6 +47,12 @@ test('manual worker requires initial approval, syncs on request, and protects ba
     await writeJsonAtomic(path.join(owner,'FileSync','requests',`${randomUUID()}.json`),{action:'sync-now',pairId});
     await waitFor<ServiceStatus>(path.join(data,'status.json'),phase(x=>x.phase==='needs-review'&&x.message.includes('review')));
     assert.equal(await fsp.readFile(path.join(backup,'a.txt'),'utf8'),'edited backup');
+    // The sync is paused on a backup-side edit, yet the working folder's change is still recorded in history.
+    const db=new StateDb(path.join(data,'state',`${pairId}.sqlite`),true);
+    try{
+      const contents=await Promise.all(db.history().filter(x=>x.operation==='version').map(x=>fsp.readFile(x.archivePath!,'utf8')));
+      assert.ok(contents.includes('new working version'));
+    }finally{db.close();}
     assert.deepEqual(stderr,[]);
   }finally{
     if(child&&!child.killed){child.kill();await new Promise(resolve=>child!.once('exit',resolve));}
@@ -118,8 +124,9 @@ test('delete-history request removes the saved version and its archive file',{ti
     await fsp.access(item.archivePath);
     await writeJsonAtomic(path.join(requests,`${randomUUID()}.json`),{action:'delete-history',pairId,ids:[item.id]});
     const wait=Date.now();
-    while(Date.now()-wait<30_000&&readHistory().length)await new Promise(r=>setTimeout(r,300));
-    assert.equal(readHistory().length,0);
+    const present=()=>readHistory().some(x=>x.id===item.id);
+    while(Date.now()-wait<30_000&&present())await new Promise(r=>setTimeout(r,300));
+    assert.equal(present(),false);
     await assert.rejects(fsp.access(item.archivePath));
   }finally{
     if(child&&!child.killed){child.kill();await new Promise(resolve=>child!.once('exit',resolve));}

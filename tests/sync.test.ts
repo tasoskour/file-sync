@@ -7,6 +7,7 @@ import { compareTrees, isMassChange } from '../src/core/compare';
 import { StateDb } from '../src/core/database';
 import { scanTree } from '../src/core/files';
 import { applyPreview } from '../src/core/sync';
+import { captureVersions } from '../src/core/versions';
 import { nextRun } from '../src/core/schedule';
 
 async function fixture(run: (source:string, backup:string, history:string, db:StateDb)=>Promise<void>) {
@@ -96,4 +97,22 @@ test('history off replaces and removes backup files without archiving', async()=
   await assert.rejects(fsp.access(path.join(backup,'gone.txt')));
   assert.equal(db.history().length,0);
   await assert.rejects(fsp.access(history));
+}));
+
+test('history records working-folder changes and deletions without any sync', async()=>fixture(async(source,backup,history,db)=>{
+  const file=path.join(source,'a.txt');
+  await Promise.all([fsp.writeFile(file,'v1'),fsp.writeFile(path.join(backup,'a.txt'),'v1')]);
+  const capture=async()=>captureVersions({sourceRoot:source,backupRoot:backup,historyRoot:history,db,entries:(await scanTree(source)).entries,complete:true});
+  assert.equal((await capture()).saved,0);               // first sight records nothing
+  await fsp.writeFile(file,'v2 edited');
+  assert.equal((await capture()).saved,2);               // previous version (from backup) and the new one
+  await fsp.writeFile(file,'v3 edited again');
+  assert.equal((await capture()).saved,1);               // each further edit is saved even with no sync in between
+  await fsp.rm(file);
+  assert.equal((await capture()).saved,1);               // the deleted file's last version
+  const rows=db.history();
+  assert.deepEqual(rows.map(x=>x.operation).sort(),['deleted','version','version','version']);
+  const contents=await Promise.all(rows.map(async x=>fsp.readFile(x.archivePath!,'utf8')));
+  assert.deepEqual(contents.sort(),['v1','v2 edited','v3 edited again','v3 edited again']);
+  assert.equal(await fsp.readFile(path.join(backup,'a.txt'),'utf8'),'v1'); // the backup was never touched
 }));

@@ -10,6 +10,7 @@ import { message, readJson, scanTree, writeJsonAtomic, type ScanResult } from '.
 import { log, purgeLogs } from './log';
 import { nextRun } from './schedule';
 import { applyPreview, purgeExpired, recoverJournal } from './sync';
+import { captureVersions, releaseArchive } from './versions';
 import { resolveFolder, validatePairs } from '../windows/volume';
 
 type RequestAction = 'verify' | 'sync-now' | 'approve' | 'approve-bulk' | 'resolve-conflict' | 'delete-history';
@@ -32,6 +33,7 @@ class PairRunner {
   private backupDirty = new Set<string>();
   private forceFull = true;
   private lastFullHash = 0;
+  private lastCapture = 0;
   private configured = false;
 
   constructor(pair: SyncPair, owner: string, private publish: () => Promise<void>) {
@@ -40,6 +42,28 @@ class PairRunner {
   }
 
   get current(): WorkerStatus { return this.status; }
+  private get keepsHistory(): boolean { return this.pair.keepHistory !== false; }
+
+  /** Saves new and deleted working-file versions to history. Failures are logged and retried on the next scan. */
+  private async captureHistory(sourceRoot: string, backupRoot: string, scan: ScanResult): Promise<void> {
+    if (!this.keepsHistory) return;
+    this.lastCapture = Date.now();
+    try {
+      const result = await captureVersions({ sourceRoot, backupRoot, historyRoot: ownerHistoryDir(this.owner), db: this.db, entries: scan.entries, complete: !scan.incomplete.length });
+      if (result.errors.length) await log('WARN', `[${this.pair.name}] History could not save ${result.errors.length} file(s): ${result.errors.slice(0, 3).join('; ')}`);
+    } catch (error) { await log('WARN', `[${this.pair.name}] History capture failed: ${message(error)}`); }
+  }
+
+  /** A scan of the working folder only, used to record history when no sync is due. */
+  private async captureOnly(): Promise<void> {
+    this.lastCapture = Date.now();
+    let sourceRoot: string, backupRoot: string;
+    try { sourceRoot = await resolveFolder(this.pair.source); backupRoot = await resolveFolder(this.pair.backup); } catch { return; }
+    const dirty = this.sourceDirty; this.sourceDirty = new Set(); this.dirtyAt = 0;
+    const scan = await scanTree(sourceRoot, { previous: this.sourceSnapshot?.entries, forcePaths: dirty });
+    if (!scan.incomplete.length) this.sourceSnapshot = scan;
+    await this.captureHistory(sourceRoot, backupRoot, scan);
+  }
 
   async recover(): Promise<void> { await recoverJournal(this.db); }
 
@@ -53,8 +77,8 @@ class PairRunner {
       if (!pairIdPattern.test(id)) continue;
       const item = this.db.historyItem(id);
       if (!item) continue;
-      if (item.archivePath && path.resolve(item.archivePath).startsWith(root + path.sep)) await fsp.rm(item.archivePath, { force: true });
       this.db.deleteHistory(id); removed++;
+      if (item.archivePath && path.resolve(item.archivePath).startsWith(root + path.sep)) await releaseArchive(this.db, item.archivePath);
     }
     if (removed) await log('INFO', `[${this.pair.name}] Deleted ${removed} saved version(s) at the user's request`);
     return removed;
@@ -80,8 +104,11 @@ class PairRunner {
     const scheduledDue = this.isScheduledDue(config);
     const unavailableRetry = this.status.phase === 'drive-unavailable' && Date.now() - this.lastCheck >= 10_000;
     const automaticDue = config.mode.kind === 'immediate' && ((this.dirtyAt > 0 && Date.now() - this.dirtyAt >= 2000) || Date.now() - this.lastCheck >= 300_000);
-    if (this.lastCheck === 0 || force || scheduledDue || automaticDue || unavailableRetry) await this.runCheck(requests, scheduledDue || !!automaticDue);
-    if (config.mode.kind === 'immediate' && this.watchers.length === 0) await this.watch(config);
+    const checking = this.lastCheck === 0 || force || scheduledDue || automaticDue || unavailableRetry;
+    if (checking) await this.runCheck(requests, scheduledDue || !!automaticDue);
+    // Manual and scheduled pairs do not sync on their own, but history still follows working-folder changes.
+    else if (this.keepsHistory && ((this.dirtyAt > 0 && Date.now() - this.dirtyAt >= 2000) || Date.now() - this.lastCapture >= 300_000)) await this.captureOnly();
+    if ((config.mode.kind === 'immediate' || this.keepsHistory) && this.watchers.length === 0 && this.status.phase !== 'drive-unavailable') await this.watch(config);
     await this.update({});
   }
 
@@ -115,6 +142,7 @@ class PairRunner {
     };
     const source = await scanTree(sourceRoot, { previous: full ? undefined : this.sourceSnapshot?.entries, forcePaths: sourceDirty, onEntry: progress });
     const backup = await scanTree(backupRoot, { previous: full ? undefined : this.backupSnapshot?.entries, forcePaths: backupDirty, onEntry: progress });
+    await this.captureHistory(sourceRoot, backupRoot, source);
     if (config.mode.kind === 'scheduled' && automaticDue) this.db.setMeta('lastRunAt', new Date().toISOString());
     if (!source.incomplete.length && !backup.incomplete.length) {
       this.sourceSnapshot = source; this.backupSnapshot = backup;

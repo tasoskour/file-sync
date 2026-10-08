@@ -6,6 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import type { PlannedChange, Preview } from '../shared/types';
 import { StateDb } from './database';
 import { message, sha256 } from './files';
+import { fileExists, historyRow, releaseArchive, storeCopy, storePath } from './versions';
 
 export interface ApplyOptions { keepHistory?: boolean; sourceRoot: string; backupRoot: string; historyRoot: string; db: StateDb; onProgress?: (done: number, total: number, path: string) => void }
 
@@ -80,19 +81,16 @@ async function assertBackupUnchanged(file: string, expected?: PlannedChange['bac
   const stat = await fsp.lstat(file);
   if (expected.kind !== 'file' || !stat.isFile() || await sha256(file) !== expected.hash) throw new Error('Backup changed outside FileSync; review required');
 }
+/** Saves the backup file that is about to be replaced or removed, unless history already holds that exact content. */
 async function archive(file: string, change: PlannedChange, id: string, options: ApplyOptions): Promise<void> {
   if (options.keepHistory === false) return;
-  await fsp.mkdir(options.historyRoot, { recursive: true });
-  const archivePath = path.join(options.historyRoot, `${id}.bin`);
-  await pipeline(fs.createReadStream(file), fs.createWriteStream(archivePath, { flags: 'wx' }));
-  const hash = await sha256(archivePath);
-  if (hash !== change.backup?.hash) { await fsp.rm(archivePath, { force: true }); throw new Error('Backup changed while archiving'); }
+  const hash = change.backup?.hash;
+  if (!hash) throw new Error('Backup file has no content hash');
   const renamedTo = change.reason?.startsWith('renamed-to:') ? change.reason.slice('renamed-to:'.length) : undefined;
-  options.db.addHistory(historyRow(id, change.path, renamedTo ? 'rename' : change.kind, archivePath, hash, renamedTo ? JSON.stringify({ from: change.path, to: renamedTo }) : undefined));
-}
-function historyRow(id: string, relative: string, operation: string, archivePath?: string, hash?: string, metadata?: string) {
-  const now = Date.now();
-  return { id, path: relative, operation, archivePath, hash, createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 168 * 3600_000).toISOString(), metadata };
+  if (!renamedTo && await fileExists(storePath(options.historyRoot, hash))) return;
+  try { await storeCopy(file, hash, options.historyRoot); }
+  catch (error) { throw new Error(error instanceof Error && error.message.includes('changed') ? 'Backup changed while archiving' : message(error)); }
+  options.db.addHistory(historyRow(id, change.path, renamedTo ? 'rename' : change.kind, storePath(options.historyRoot, hash), hash, renamedTo ? JSON.stringify({ from: change.path, to: renamedTo }) : undefined));
 }
 async function setMetadata(file: string, entry: NonNullable<PlannedChange['source']>): Promise<void> {
   await fsp.utimes(file, new Date(), new Date(entry.mtimeMs));
@@ -109,7 +107,7 @@ export async function recoverJournal(db: StateDb): Promise<void> {
 
 export async function purgeExpired(db: StateDb): Promise<void> {
   for (const item of db.expired(new Date().toISOString())) {
-    if (item.archivePath) await fsp.rm(item.archivePath, { force: true }).catch(() => undefined);
     db.deleteHistory(item.id);
+    await releaseArchive(db, item.archivePath);
   }
 }
