@@ -132,7 +132,10 @@ async function api(req: IncomingMessage, res: ServerResponse, sid: string): Prom
     const input = await body<{pairId:string;which:'source'|'backup';path?:string}>(req);
     const pair = config.pairs.find(x => x.id === input.pairId);
     if (!pair || !['source', 'backup'].includes(input.which)) throw new Error('Unknown folder');
-    const root = await resolveFolder(input.which === 'source' ? pair.source : pair.backup);
+    const folder = input.which === 'source' ? pair.source : pair.backup;
+    await resolveFolder(folder); // confirms the right drive is connected
+    // Explorer cannot open the internal volume-GUID form of the path, so use the drive-letter path.
+    const root = folder.displayPath;
     let target = root;
     if (input.path) {
       const parts = input.path.split('/');
@@ -141,7 +144,7 @@ async function api(req: IncomingMessage, res: ServerResponse, sid: string): Prom
     }
     const exists = await fsp.lstat(target).then(() => true, () => false);
     // Explorer reports exit code 1 even on success, so errors from it are ignored.
-    if (exists && target !== root) execFile('explorer.exe', [`/select,${target}`], { windowsHide: false }, () => undefined);
+    if (exists && target !== root) execFile('explorer.exe', [`/select,"${target}"`], { windowsHide: false, windowsVerbatimArguments: true }, () => undefined);
     else execFile('explorer.exe', [exists ? target : path.dirname(target)], { windowsHide: false }, () => undefined);
     return reply(res, 200, { ok: true, exists });
   }
