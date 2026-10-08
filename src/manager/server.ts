@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import type { AppConfig, ServiceStatus, SyncMode, SyncPair } from '../shared/types';
 import { localData, logsDir, ownerRequestsDir, pairDbFile, pairIdPattern, pairPreviewFile, processDbFile, stateDir, statusFile } from '../shared/locations';
 import { readConfig } from '../core/config';
+import { BUILD_ID } from '../shared/buildinfo';
 import { StateDb } from '../core/database';
 import { readJson, writeJsonAtomic } from '../core/files';
 import { captureFolderRoot, pickFolder, resolveFolder, validatePairs } from '../windows/volume';
@@ -56,7 +57,7 @@ async function api(req: IncomingMessage, res: ServerResponse, sid: string): Prom
   if (config && config.ownerSid !== sid) return reply(res, 403, { error: 'This FileSync installation belongs to another Windows account' });
   if (req.method === 'GET' && url.pathname === '/api/state') {
     const [service, status] = await Promise.all([serviceInfo(), readJson<ServiceStatus>(statusFile)]);
-    return reply(res, 200, { config, service, status });
+    return reply(res, 200, { config, service, status, managerBuildId: BUILD_ID });
   }
   if (req.method === 'GET' && url.pathname === '/api/preview') {
     const pairId = pairParam(url.searchParams.get('pairId'));

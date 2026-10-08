@@ -196,6 +196,9 @@ export const el: Record<string, string> = {
   'Uninstall service': 'Απεγκατάσταση υπηρεσίας',
   'These actions request Windows administrator approval. Uninstall preserves your files, settings and seven-day history.': 'Αυτές οι ενέργειες ζητούν έγκριση διαχειριστή των Windows. Η απεγκατάσταση διατηρεί τα αρχεία, τις ρυθμίσεις και το ιστορικό επτά ημερών.',
 
+  'The background service is an older version': 'Η υπηρεσία παρασκηνίου είναι παλαιότερης έκδοσης',
+  'The running service was installed from an earlier build, so newer features such as history may not work yet. Use Repair to update it.': 'Η υπηρεσία που εκτελείται εγκαταστάθηκε από προηγούμενη έκδοση, οπότε νεότερες λειτουργίες όπως το ιστορικό μπορεί να μη λειτουργούν ακόμη. Χρησιμοποιήστε την Επιδιόρθωση για ενημέρωση.',
+
   // history
   'Previous versions': 'Προηγούμενες εκδόσεις',
   'Earlier versions of changed or deleted working files stay available for seven days.': 'Οι προηγούμενες εκδόσεις αρχείων εργασίας που άλλαξαν ή διαγράφηκαν παραμένουν διαθέσιμες για επτά ημέρες.',

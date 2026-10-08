@@ -88,6 +88,8 @@ export interface WorkerStatus {
 
 export interface ServiceStatus {
   error?: string;
+  /** Build of the running service, compared with the manager's build to spot an outdated service. */
+  buildId?: string;
   updatedAt: string;
   pairs: Record<string, WorkerStatus>;
   memory?: { rss: number; heapUsed: number; capturedAt: string };

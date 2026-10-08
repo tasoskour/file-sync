@@ -26,6 +26,7 @@ const tab = ref<(typeof tabs)[number]['key']>('home');
 const token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
 const config = ref<AppConfig>();
 const status = ref<ServiceStatus>();
+const managerBuildId = ref('');
 const service = ref<ServiceInfo>({ installed:false, state:'not-installed', startMode:'none' });
 const previews = ref<Record<string, Preview>>({});
 const selectedId = ref('');
@@ -94,7 +95,8 @@ function makeMode(d:Draft):SyncMode {
 
 async function refresh():Promise<void> {
   try {
-    const state=await api<{config?:AppConfig;status?:ServiceStatus;service:ServiceInfo}>('state');
+    const state=await api<{config?:AppConfig;status?:ServiceStatus;service:ServiceInfo;managerBuildId?:string}>('state');
+    managerBuildId.value=state.managerBuildId||'';
     config.value=state.config; status.value=state.status; service.value=state.service;
     const signature = JSON.stringify(state.config?.pairs || []);
     if (signature!==loadedSignature && !draftsDirty) {
@@ -209,6 +211,14 @@ function deleteHistory(items:HistoryItem[], description:string) {
   }, 'Deletion requested. The service removes the files within a few seconds.');
 }
 const selectedItems = computed(() => history.value.filter(isSelected));
+/** Shows a log line's leading timestamp (UTC in older lines, local with offset in newer ones) in the viewer's local time. */
+function logLine(line:string) {
+  const match=/^(\d{4}-\d\d-\d\dT\S+) (.*)$/.exec(line);
+  if(!match||Number.isNaN(Date.parse(match[1]))) return line;
+  const when=new Date(match[1]);
+  const p=(n:number)=>String(n).padStart(2,'0');
+  return `${when.getFullYear()}-${p(when.getMonth()+1)}-${p(when.getDate())} ${p(when.getHours())}:${p(when.getMinutes())}:${p(when.getSeconds())} ${match[2]}`;
+}
 function exportLogs(){const blob=new Blob([filteredLogs.value.join('\n')],{type:'text/plain'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='FileSync-logs.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
 const phaseLabels:Record<string,string>={'unconfigured':'Not configured','checking':'Checking folders','in-sync':'In sync','pending':'Changes pending','syncing':'Syncing','needs-review':'Needs review','drive-unavailable':'Drive unavailable','verification-incomplete':'Check incomplete','error':'Service error'};
@@ -216,6 +226,7 @@ const phaseOrder=['error','needs-review','drive-unavailable','verification-incom
 function phaseLabel(phase?:string) { return t(phaseLabels[phase||'']||'Starting'); }
 function phaseColor(phase?:string) { return phase==='in-sync'?'success':phase==='needs-review'||phase==='error'||phase==='drive-unavailable'||phase==='verification-incomplete'?'warning':'primary'; }
 function pairStatus(id:string):WorkerStatus|undefined { return status.value?.pairs?.[id]; }
+const outdatedService=computed(()=>service.value.installed&&service.value.state==='Running'&&!!managerBuildId.value&&!!status.value&&status.value.buildId!==managerBuildId.value);
 const pairCount=computed(()=>config.value?.pairs.length||0);
 const overallPhase=computed(()=>{
   const phases=(config.value?.pairs||[]).map(p=>pairStatus(p.id)?.phase).filter((x):x is WorkerStatus['phase']=>!!x);
@@ -276,6 +287,7 @@ window.addEventListener('pagehide',()=>{ try { navigator.sendBeacon('/api/closed
       <template v-if="tab==='home'">
         <div class="eyebrow">{{t('Backup overview')}}</div><h1 class="page-title">{{t('Your folders at a glance')}}</h1><p class="subtle mb-6">{{t('The state of every working folder and its backup.')}}</p>
         <div class="hero mb-5"><div><div class="text-overline">{{t('Current status')}}</div><h2><span class="status-dot"></span>{{stateLabel}}</h2><p>{{heroMessage}}</p></div><v-btn v-if="pairCount>1" color="white" variant="flat" :loading="busy" @click="syncAll">{{t('Sync all now')}}</v-btn><v-btn v-else-if="pairCount===1" color="white" variant="flat" :loading="busy" @click="send(config!.pairs[0].id,'sync-now')">{{t('Sync now')}}</v-btn><v-btn v-else color="white" variant="flat" @click="visit('folders')">{{t('Add folders')}}</v-btn></div>
+        <div v-if="outdatedService" class="attention-box mb-5" role="alert"><i class="mdi mdi-alert-circle" aria-hidden="true"></i><div><strong>{{t('The background service is an older version')}}</strong><p class="mt-1 mb-2">{{t('The running service was installed from an earlier build, so newer features such as history may not work yet. Use Repair to update it.')}}</p><v-btn color="warning" variant="flat" size="small" :loading="busy" @click="control('repair')">{{t('Repair')}}</v-btn></div></div>
         <div v-if="attentionPairs.length" class="attention-box mb-5" role="alert"><i class="mdi mdi-alert-circle" aria-hidden="true"></i><div><strong>{{t(attentionPairs.length===1?'Action required: {n} folder pair needs your attention':'Action required: {n} folder pairs need your attention',{n:attentionPairs.length})}}</strong><div v-for="pair in attentionPairs" :key="pair.id" class="mt-1"><strong>{{pair.name}}</strong> — {{tMessage(pairStatus(pair.id)?.message)}}</div><div class="mt-1">{{t('Nothing is changed in a pair until you review it below.')}}</div></div></div>
         <div v-if="!pairCount" class="empty">{{t('No folder pairs yet. Open Folders & schedule to add one.')}}</div>
         <div v-for="pair in config?.pairs" :key="pair.id" class="panel mb-4" :class="{attention:needsAttention(pair.id)}">
@@ -321,6 +333,7 @@ window.addEventListener('pagehide',()=>{ try { navigator.sendBeacon('/api/closed
 
       <template v-if="tab==='service'">
         <div class="eyebrow">{{t('Windows background service')}}</div><h1 class="page-title">{{t('Service')}}</h1><p class="subtle mb-6">{{t('Manage FileSync even when the browser manager is closed. The service can be installed before any folders are configured.')}}</p>
+        <div v-if="outdatedService" class="attention-box mb-5" role="alert"><i class="mdi mdi-alert-circle" aria-hidden="true"></i><div><strong>{{t('The background service is an older version')}}</strong><p class="mt-1 mb-2">{{t('The running service was installed from an earlier build, so newer features such as history may not work yet. Use Repair to update it.')}}</p><v-btn color="warning" variant="flat" size="small" :loading="busy" @click="control('repair')">{{t('Repair')}}</v-btn></div></div>
         <div class="grid-2"><div class="panel"><h2 class="section-title">{{t('Service state')}}</h2><div class="list-row"><span>{{t('Installation')}}</span><strong>{{service.installed?t('Installed'):t('Not installed')}}</strong></div><div class="list-row"><span>{{t('Startup')}}</span><strong>{{service.startMode}}</strong></div><div class="list-row"><span>{{t('Windows state')}}</span><strong>{{service.state}}</strong></div><div class="list-row"><span>{{t('Sync health')}}</span><strong>{{stateLabel}}</strong></div><div class="list-row"><span>{{t('Folder pairs')}}</span><strong>{{pairCount}}</strong></div><div class="list-row"><span>{{t('Service process ID')}}</span><strong>{{service.processId||'—'}}</strong></div></div><div class="panel"><h2 class="section-title">{{t('Actions')}}</h2><div class="toolbar"><template v-if="!service.installed"><v-btn color="primary" variant="flat" size="large" prepend-icon="mdi-download" class="action-btn" :loading="busy" @click="control('install')">{{t('Install service')}}</v-btn></template><template v-else><v-btn color="primary" :loading="busy" @click="control('start')">{{t('Start')}}</v-btn><v-btn variant="tonal" :loading="busy" @click="control('stop')">{{t('Stop')}}</v-btn><v-btn variant="tonal" :loading="busy" @click="control('restart')">{{t('Restart')}}</v-btn><v-btn variant="tonal" :loading="busy" @click="control('enable')">{{t('Enable')}}</v-btn><v-btn variant="tonal" :loading="busy" @click="control('disable')">{{t('Disable')}}</v-btn><v-btn variant="tonal" :loading="busy" @click="control('repair')">{{t('Repair')}}</v-btn><v-btn color="error" variant="outlined" :loading="busy" @click="control('uninstall')">{{t('Uninstall service')}}</v-btn></template></div><p class="subtle text-caption mt-4">{{t('These actions request Windows administrator approval. Uninstall preserves your files, settings and seven-day history.')}}</p></div></div>
       </template>
 
@@ -329,7 +342,7 @@ window.addEventListener('pagehide',()=>{ try { navigator.sendBeacon('/api/closed
       </template>
 
       <template v-if="tab==='logs'">
-        <div class="eyebrow">{{t('Activity and errors')}}</div><h1 class="page-title">{{t('Logs')}}</h1><p class="subtle mb-6">{{t('Recent service activity from dated text log files.')}}</p><div class="panel"><div class="grid-2 mb-3"><v-text-field v-model="logQuery" :label="t('Search logs')" prepend-inner-icon="mdi-magnify" hide-details></v-text-field><v-select v-model="logLevel" :items="['All','INFO','WARN','ERROR']" :label="t('Level')" hide-details variant="outlined"></v-select></div><v-btn variant="tonal" size="small" class="mb-3" @click="exportLogs">{{t('Export shown lines')}}</v-btn><div v-if="!filteredLogs.length" class="empty">{{t('No matching log entries.')}}</div><div v-for="(line,index) in filteredLogs" :key="index" class="log-line">{{line}}</div></div>
+        <div class="eyebrow">{{t('Activity and errors')}}</div><h1 class="page-title">{{t('Logs')}}</h1><p class="subtle mb-6">{{t('Recent service activity from dated text log files.')}}</p><div class="panel"><div class="grid-2 mb-3"><v-text-field v-model="logQuery" :label="t('Search logs')" prepend-inner-icon="mdi-magnify" hide-details></v-text-field><v-select v-model="logLevel" :items="['All','INFO','WARN','ERROR']" :label="t('Level')" hide-details variant="outlined"></v-select></div><v-btn variant="tonal" size="small" class="mb-3" @click="exportLogs">{{t('Export shown lines')}}</v-btn><div v-if="!filteredLogs.length" class="empty">{{t('No matching log entries.')}}</div><div v-for="(line,index) in filteredLogs" :key="index" class="log-line">{{logLine(line)}}</div></div>
       </template>
 
       <template v-if="tab==='memory'">

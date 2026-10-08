@@ -12,6 +12,7 @@ import { nextRun } from './schedule';
 import { applyPreview, purgeExpired, recoverJournal } from './sync';
 import { captureVersions, releaseArchive } from './versions';
 import { resolveFolder, validatePairs } from '../windows/volume';
+import { BUILD_ID } from '../shared/buildinfo';
 
 type RequestAction = 'verify' | 'sync-now' | 'approve' | 'approve-bulk' | 'resolve-conflict' | 'delete-history';
 const requestActions: RequestAction[] = ['verify', 'sync-now', 'approve', 'approve-bulk', 'resolve-conflict', 'delete-history'];
@@ -330,7 +331,7 @@ class Supervisor {
     const m = process.memoryUsage();
     const pairs: Record<string, WorkerStatus> = {};
     for (const [id, runner] of this.runners) pairs[id] = runner.current;
-    const status: ServiceStatus = { updatedAt: new Date().toISOString(), pairs, memory: { rss: m.rss, heapUsed: m.heapUsed, capturedAt: new Date().toISOString() } };
+    const status: ServiceStatus = { buildId: BUILD_ID, updatedAt: new Date().toISOString(), pairs, memory: { rss: m.rss, heapUsed: m.heapUsed, capturedAt: new Date().toISOString() } };
     if (error) status.error = error;
     await writeJsonAtomic(statusFile, status);
   }

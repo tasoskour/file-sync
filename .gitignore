@@ -4,3 +4,4 @@ dist/
 coverage/
 vendor/
 *.tsbuildinfo
+src/shared/buildinfo.ts
