@@ -47,7 +47,7 @@ async function applyOne(change: PlannedChange, options: ApplyOptions): Promise<v
     } else if (change.kind === 'metadata') {
       await assertBackupUnchanged(backup, change.backup);
       await setMetadata(backup, change.source!);
-      if (options.keepHistory !== false) options.db.addHistory(historyRow(id, change.path, 'metadata', undefined, undefined, JSON.stringify(change.backup)));
+      if (options.keepHistory !== false) options.db.addHistory(historyRow(id, change.path, 'metadata', undefined, undefined, JSON.stringify({ ...change.backup, to: { mtimeMs: change.source!.mtimeMs, readonly: change.source!.readonly } })));
     } else {
       if (!change.source || change.source.kind !== 'file') throw new Error('Invalid source file');
       await fsp.mkdir(path.dirname(backup), { recursive: true });

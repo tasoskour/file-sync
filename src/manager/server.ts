@@ -108,7 +108,14 @@ async function api(req: IncomingMessage, res: ServerResponse, sid: string): Prom
     for (const name of await fsp.readdir(stateDir).catch(() => [] as string[])) {
       const pairId = name.replace(/.sqlite$/, '');
       if (!pairIdPattern.test(pairId) || !name.endsWith('.sqlite')) continue;
-      try { const db = new StateDb(pairDbFile(pairId), true); for (const item of db.history(200)) rows.push({ ...item, pairId }); db.close(); }
+      try {
+        const db = new StateDb(pairDbFile(pairId), true);
+        let tracked = new Map<string, { hash: string; seenAt: string }>();
+        try { tracked = db.tracked(); } catch { /* history written by an older service has no tracking table */ }
+        // An entry is the current version when its content is what the working file holds right now.
+        for (const item of db.history(200)) rows.push({ ...item, pairId, isCurrent: ['version', 'original'].includes(item.operation) && !!item.hash && tracked.get(item.path)?.hash === item.hash });
+        db.close();
+      }
       catch { /* a pair that has not written state yet has no history */ }
     }
     rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));

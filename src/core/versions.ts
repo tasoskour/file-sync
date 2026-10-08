@@ -68,11 +68,15 @@ export async function captureVersions(options: CaptureOptions): Promise<{ saved:
     return true;
   };
   /** Makes sure a previous version's content is stored, taking it from the backup copy when that still matches. */
-  const preserveFromBackup = async (relative: string, hash: string, operation: string): Promise<void> => {
+  const preserveFromBackup = async (relative: string, hash: string, withRow: boolean): Promise<void> => {
     if (await fileExists(storePath(historyRoot, hash))) return;
     const backupFile = path.join(options.backupRoot, ...relative.split('/'));
     if (!(await fileExists(backupFile)) || await sha256(backupFile) !== hash) return;
-    await save(relative, hash, operation, backupFile);
+    if (!withRow) { await storeCopy(backupFile, hash, historyRoot); return; }
+    await storeCopy(backupFile, hash, historyRoot);
+    // Dated a millisecond earlier so it lists just below the edit that replaced it.
+    db.addHistory({ ...historyRow(randomUUID(), relative, 'original', storePath(historyRoot, hash), hash), createdAt: new Date(Date.now() - 1).toISOString() });
+    saved++;
   };
 
   const track: Array<[string, string]> = [];
@@ -83,7 +87,7 @@ export async function captureVersions(options: CaptureOptions): Promise<{ saved:
     if (!known) { track.push([relative, entry.hash]); continue; }
     if (known.hash === entry.hash) continue;
     try {
-      await preserveFromBackup(relative, known.hash, 'version');
+      await preserveFromBackup(relative, known.hash, true);
       if (!(await fileExists(storePath(historyRoot, entry.hash)))) await save(relative, entry.hash, 'version', path.join(options.sourceRoot, ...relative.split('/')));
       else { db.addHistory(historyRow(randomUUID(), relative, 'version', storePath(historyRoot, entry.hash), entry.hash)); saved++; }
       track.push([relative, entry.hash]);
@@ -93,7 +97,7 @@ export async function captureVersions(options: CaptureOptions): Promise<{ saved:
     for (const [relative, known] of tracked) {
       if (entries.has(relative)) continue;
       try {
-        await preserveFromBackup(relative, known.hash, 'version');
+        await preserveFromBackup(relative, known.hash, false);
         if (await fileExists(storePath(historyRoot, known.hash))) { db.addHistory(historyRow(randomUUID(), relative, 'deleted', storePath(historyRoot, known.hash), known.hash)); saved++; }
         untrack.push(relative);
       } catch (error) { errors.push(`${relative}: ${message(error)}`); }

@@ -111,8 +111,22 @@ test('history records working-folder changes and deletions without any sync', as
   await fsp.rm(file);
   assert.equal((await capture()).saved,1);               // the deleted file's last version
   const rows=db.history();
-  assert.deepEqual(rows.map(x=>x.operation).sort(),['deleted','version','version','version']);
+  assert.deepEqual(rows.map(x=>x.operation).sort(),['deleted','original','version','version']);
   const contents=await Promise.all(rows.map(async x=>fsp.readFile(x.archivePath!,'utf8')));
   assert.deepEqual(contents.sort(),['v1','v2 edited','v3 edited again','v3 edited again']);
   assert.equal(await fsp.readFile(path.join(backup,'a.txt'),'utf8'),'v1'); // the backup was never touched
+}));
+
+test('metadata-only history entries record the old and new attributes', async()=>fixture(async(source,backup,history,db)=>{
+  await Promise.all([fsp.writeFile(path.join(source,'a.txt'),'same'),fsp.writeFile(path.join(backup,'a.txt'),'same')]);
+  await fsp.utimes(path.join(source,'a.txt'),new Date(),new Date('2020-01-01T00:00:00Z'));
+  await fsp.utimes(path.join(backup,'a.txt'),new Date(),new Date('2021-06-01T00:00:00Z'));
+  const preview=compareTrees('pair',await scanTree(source),await scanTree(backup));
+  assert.deepEqual(preview.changes.map(x=>x.kind),['metadata']);
+  assert.deepEqual((await applyPreview(preview,{sourceRoot:source,backupRoot:backup,historyRoot:history,db})).errors,[]);
+  const [row]=db.history();
+  assert.equal(row.operation,'metadata');
+  const info=JSON.parse(row.metadata!) as {mtimeMs:number;to:{mtimeMs:number;readonly:boolean}};
+  assert.equal(new Date(info.mtimeMs).getUTCFullYear(),2021);
+  assert.equal(new Date(info.to.mtimeMs).getUTCFullYear(),2020);
 }));
