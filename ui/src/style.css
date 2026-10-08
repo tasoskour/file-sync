@@ -63,3 +63,6 @@ th { color: #607b88; font-weight: 800; }
 .lang-switch button { flex: 1; border: 1px solid #2c4655; background: transparent; color: #bbccd6; border-radius: 8px; padding: 6px 0; font: 700 12px 'DM Sans',sans-serif; cursor: pointer; }
 .lang-switch button.active { background: #1f6f6c; border-color: #1f6f6c; color: #fff; }
 @media(max-width:900px){.lang-switch{padding:0 4px;flex-direction:column}}
+.history-item { margin-left: 22px; padding-left: 16px; border-left: 2px solid #cfe0e4; }
+.history-item:last-child { border-bottom: none; }
+@media(max-width:600px){.history-item{margin-left:8px;padding-left:10px}}
